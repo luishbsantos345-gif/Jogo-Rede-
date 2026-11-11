@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#1d2340">
+  <title>Barbearia — Jogo de Gestão</title>
+  <link rel="stylesheet" href="/css/estilo.css">
+</head>
+<body>
+  <!-- ============ TELA INICIAL ============ -->
+  <section id="telaInicial" class="tela ativa">
+    <div class="cartao inicio">
+      <canvas id="logoCanvas" width="96" height="44"></canvas>
+      <h1>Barbearia</h1>
+      <p class="sub">Jogo de gestão em equipe</p>
+      <div class="abas-inicio">
+        <div class="bloco">
+          <h2>Entrar com código</h2>
+          <input id="inCodigo" maxlength="5" placeholder="ABCDE" autocomplete="off" autocapitalize="characters" spellcheck="false">
+          <button id="btEntrarCodigo" class="bt grande">Entrar</button>
+        </div>
+        <div class="bloco">
+          <h2>Criar empresa</h2>
+          <p class="dica">Para o instrutor. A senha protege o painel do instrutor.</p>
+          <input id="inSenhaCriar" type="password" maxlength="30" placeholder="Senha do instrutor (mín. 4)">
+          <button id="btCriar" class="bt grande verde">Criar empresa</button>
+        </div>
+      </div>
+      <details class="observar">
+        <summary>Entrar como instrutor (só observar)</summary>
+        <div class="linha">
+          <input id="inCodigoObs" maxlength="5" placeholder="Código" autocapitalize="characters">
+          <input id="inSenhaObs" type="password" placeholder="Senha">
+          <button id="btObservar" class="bt">Observar</button>
+        </div>
+      </details>
+      <p id="msgInicio" class="msg"></p>
+    </div>
+  </section>
+
+  <!-- ============ PERSONAGEM ============ -->
+  <section id="telaPersonagem" class="tela">
+    <div class="cartao personagem">
+      <div class="topo-pers">
+        <h1 id="tituloEmpresa">Empresa</h1>
+        <div class="codigo-grande" id="codigoGrande" title="Código para os alunos entrarem"></div>
+      </div>
+      <div class="pers-grade">
+        <div class="pers-preview">
+          <canvas id="previewCanvas" width="168" height="200"></canvas>
+          <div class="linha centro">
+            <button class="bt pequeno" id="btGirar" title="Girar">↻ Girar</button>
+            <button class="bt pequeno" id="btAleatorio">Sortear</button>
+          </div>
+        </div>
+        <div class="pers-opcoes">
+          <label>Seu nome <input id="inNome" maxlength="16" placeholder="2 a 16 letras"></label>
+          <div id="opcoesSkin"></div>
+        </div>
+      </div>
+      <h2>Escolha seu cargo</h2>
+      <div id="cargos" class="cargos"></div>
+      <div class="linha fim">
+        <button id="btVoltar" class="bt">Voltar</button>
+        <button id="btEntrarJogo" class="bt grande verde">Entrar na barbearia</button>
+      </div>
+      <p id="msgPers" class="msg"></p>
+    </div>
+  </section>
+
+  <!-- ============ JOGO ============ -->
+  <section id="telaJogo" class="tela">
+    <canvas id="tela"></canvas>
+
+    <header id="barraTopo">
+      <div class="loja-nome" id="hudNome">Barbearia</div>
+      <div class="hud-item" id="hudDia">Dia 1 · Seg</div>
+      <div class="hud-item" id="hudHora"><img id="hudCeu" alt=""> <span>07:00</span></div>
+      <div class="hud-item dinheiro" id="hudCaixa">ʀ$ 0,00</div>
+      <div class="hud-item" id="hudDivida">Dívida ʀ$ 0,00</div>
+      <div class="hud-item" id="hudRep">Rep. 50</div>
+      <div class="hud-item placa" id="hudAberto">FECHADO</div>
+      <div class="hud-item" id="hudVel"></div>
+      <button class="bt-icone" id="btMudo" title="Som">♪</button>
+    </header>
+
+    <div id="anuncioDia" class="anuncio-dia escondido"></div>
+
+    <aside id="painelFila" class="painel-fila escondido">
+      <div class="titulo-fila">Fila de espera</div>
+      <div id="listaFila"></div>
+      <div id="acoesBarbeiro"></div>
+    </aside>
+
+    <aside id="painelLateral" class="painel-lateral escondido">
+      <div class="abas">
+        <button class="aba ativa" data-aba="log">Log</button>
+        <button class="aba" data-aba="chat">Chat <span id="chatNovo" class="bolinha escondido"></span></button>
+        <button class="bt-icone fechar" id="btFecharLateral">✕</button>
+      </div>
+      <div id="abaLog" class="conteudo-aba"></div>
+      <div id="abaChat" class="conteudo-aba escondido">
+        <div id="mensagensChat"></div>
+        <form id="formChat" class="linha"><input id="inChat" maxlength="200" placeholder="Mensagem..." autocomplete="off"><button class="bt">Enviar</button></form>
+      </div>
+    </aside>
+
+    <div id="bandejaConstrucao" class="bandeja escondido">
+      <div class="bandeja-titulo">Modo construção — arraste um item para a loja · R gira</div>
+      <div id="itensBandeja" class="itens-bandeja"></div>
+      <div id="acoesMovel" class="acoes-movel"></div>
+    </div>
+
+    <nav id="barraBaixo">
+      <button class="bt-painel" data-painel="loja">Loja</button>
+      <button class="bt-painel" data-painel="compras">Compras</button>
+      <button class="bt-painel" data-painel="estoque">Estoque</button>
+      <button class="bt-painel" id="btConstruir">Construir</button>
+      <button class="bt-painel" data-painel="banco">Banco</button>
+      <button class="bt-painel" data-painel="equipe">Equipe</button>
+      <button class="bt-painel" id="btLog">Log/Chat</button>
+      <button class="bt-painel escondido" data-painel="instrutor" id="btInstrutor">Instrutor</button>
+      <div class="zoom">
+        <button class="bt-icone" id="btZoomMenos" title="Afastar">−</button>
+        <button class="bt-icone" id="btZoomMais" title="Aproximar">+</button>
+      </div>
+    </nav>
+
+    <div id="janela" class="janela escondido" role="dialog">
+      <div class="janela-topo"><span id="janelaTitulo"></span><button class="bt-icone" id="btFecharJanela">✕</button></div>
+      <div id="janelaCorpo" class="janela-corpo"></div>
+    </div>
+
+    <div id="modalResumo" class="modal escondido">
+      <div class="janela modal-janela">
+        <div class="janela-topo"><span id="resumoTitulo">Resumo do dia</span><button class="bt-icone" id="btFecharResumo">✕</button></div>
+        <div id="resumoCorpo" class="janela-corpo"></div>
+      </div>
+    </div>
+
+    <div id="toasts"></div>
+    <div id="dicaFlutuante" class="dica-flutuante escondido"></div>
+  </section>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script type="module" src="/js/main.js"></script>
+</body>
+</html>
