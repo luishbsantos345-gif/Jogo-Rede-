@@ -1,0 +1,18 @@
+{
+  "name": "barbearia-gestao",
+  "version": "1.0.0",
+  "description": "Jogo web multiplayer de gestão de uma barbearia para uso em sala de aula",
+  "type": "module",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js",
+    "test": "node --test",
+    "simular": "node scripts/simular.js"
+  },
+  "engines": { "node": ">=18" },
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.21.2",
+    "socket.io": "^4.8.1"
+  }
+}
