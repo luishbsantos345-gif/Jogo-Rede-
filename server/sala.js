@@ -2,7 +2,7 @@
 // O estado persistente fica em `this.s` (serializável em JSON).
 
 import eco from '../config/economia.js';
-import { MAPA, aEstrela, caminhavelBase, noInterior, vizinhos, passagemLivre } from '../shared/mapa.js';
+import { MAPA, aEstrela, caminhavelBase, noInterior, vizinhos, passagemLivre, interiorDoNivel, espelhoDaCadeira, FRENTE } from '../shared/mapa.js';
 import { pode, dicaPermissao } from '../shared/permissoes.js';
 import { formatarDinheiro } from '../shared/dinheiro.js';
 import * as banco from './banco.js';
@@ -61,7 +61,7 @@ function estadoInicial(codigo, senha) {
     senha, // { hash, salt }
     criadaEm: Date.now(),
     config: { diaMinutosReais: eco.tempo.diaMinutosReaisPadrao, velocidade: 1, pausado: false },
-    loja: { nome: 'Barbearia Nova', aberta: false, reputacao: eco.reputacaoInicial, caixa: eco.capitalInicial, diasNegativo: 0, falida: false },
+    loja: { nome: 'Barbearia Nova', aberta: false, reputacao: eco.reputacaoInicial, caixa: eco.capitalInicial, diasNegativo: 0, falida: false, nivel: 1 },
     tempo: { dia: 1, minuto: MIN_INICIO, fase: 'dia', noiteRestante: 0 },
     precos: {
       servicos: Object.fromEntries(Object.entries(eco.servicos).map(([k, v]) => [k, v.ref])),
@@ -98,6 +98,7 @@ export class Sala {
     this.rng = Math.random;
     this.sujo = true;
     this.ouvinte = () => {}; // (tipo, dados) => void — definido pelo servidor
+    this.s.loja.nivel ??= 1; // salas salvas antes da ampliação existir
     this.reconstruirOcupacao();
   }
 
@@ -151,6 +152,14 @@ export class Sala {
   }
 
   // ------------------------------------------------------------------ mapa e móveis
+  /** Área interna atual (depende do nível de ampliação). */
+  get int() {
+    return interiorDoNivel(this.s.loja.nivel);
+  }
+  /** Parâmetros do nível atual (config/economia.js → ampliacao). */
+  nivelAtual() {
+    return eco.ampliacao[Math.min(eco.ampliacao.length, this.s.loja.nivel || 1) - 1];
+  }
   reconstruirOcupacao() {
     this.ocupacao = new Map();
     for (const m of this.s.moveis) if (m.colocado) this.ocupacao.set(m.y * MAPA.W + m.x, m);
@@ -163,10 +172,11 @@ export class Sala {
   colocados(tipo) {
     return this.s.moveis.filter((m) => m.colocado && m.tipo === tipo);
   }
+  /** Cadeiras que podem atender: as que têm um espelho à frente, virado para elas. */
   cadeirasAtivas() {
-    const cadeiras = this.colocados('cadeira').sort((a, b) => a.id - b.id);
-    const n = Math.min(cadeiras.length, this.colocados('espelho').length);
-    return cadeiras.slice(0, n);
+    return this.colocados('cadeira')
+      .sort((a, b) => a.id - b.id)
+      .filter((c) => espelhoDaCadeira(c, this.s.moveis));
   }
   temFerramenta(tipo) {
     return this.s.ferramentas[tipo]?.some((u) => u > 0) ?? false;
@@ -195,7 +205,7 @@ export class Sala {
   requisitosAbertura() {
     return [
       { item: '1 cadeira de barbeiro no mapa', ok: this.colocados('cadeira').length > 0 },
-      { item: '1 espelho de bancada no mapa', ok: this.colocados('espelho').length > 0 },
+      { item: '1 espelho na frente da cadeira, virado para ela', ok: this.cadeirasAtivas().length > 0 },
       { item: '1 tesoura ou máquina de corte', ok: this.temFerramenta('tesoura') || this.temFerramenta('maquina') },
       { item: '1 balcão/caixa no mapa', ok: this.colocados('balcao').length > 0 },
     ];
@@ -241,7 +251,7 @@ export class Sala {
   gerarPassantes(dt) {
     const s = this.s;
     const hora = Math.floor(s.tempo.minuto / 60);
-    const porHora = eco.demanda.passantesPorHora * (eco.demanda.porHora[hora] ?? 0.5) * eco.demanda.diaSemana[this.diaSemana()] * merc.modDemanda(s.mercado);
+    const porHora = eco.demanda.passantesPorHora * (eco.demanda.porHora[hora] ?? 0.5) * eco.demanda.diaSemana[this.diaSemana()] * merc.modDemanda(s.mercado) * (1 + this.nivelAtual().bonusDemanda);
     const porSegundo = porHora / (this.segPorMinutoJogo() * 60);
     if (this.rng() < porSegundo * dt) this.criarPassante();
   }
@@ -278,7 +288,7 @@ export class Sala {
       pacienciaMax: 0,
       humor: null,
     };
-    c.caminho = aEstrela({ x: x0, y: 11 }, { x: MAPA.portaFora.x, y: 11 }) || [];
+    c.caminho = aEstrela({ x: x0, y: 11 }, { x: MAPA.portaFora.x, y: 11 }, undefined, false, this.int) || [];
     s.clientes.push(c);
   }
 
@@ -304,7 +314,7 @@ export class Sala {
     const usados = new Set(esperando.map((c) => (c.lugar.tipo === 'sofa' ? `s${c.lugar.movelId}:${c.lugar.idx}` : `p${c.lugar.x},${c.lugar.y}`)));
     for (const l of this.lugaresDeEspera()) if (!usados.has(`s${l.movelId}:${l.idx}`)) return l;
     const emPe = esperando.filter((c) => c.lugar.tipo === 'pe').length;
-    if (emPe >= eco.demanda.lugaresEmPe) return null;
+    if (emPe >= eco.demanda.lugaresEmPe + this.nivelAtual().lugaresEmPeExtra) return null;
     // tiles livres mais próximos da porta (BFS), sem móveis e sem outro cliente
     const inicio = MAPA.porta;
     const fila = [inicio];
@@ -315,7 +325,7 @@ export class Sala {
       if (livre) return { tipo: 'pe', x: t.x, y: t.y };
       for (const v of vizinhos(t.x, t.y)) {
         const k = `${v.x},${v.y}`;
-        if (visto.has(k) || !noInterior(v.x, v.y) || this.bloqueado(v.x, v.y)) continue;
+        if (visto.has(k) || !noInterior(v.x, v.y, this.int) || this.bloqueado(v.x, v.y)) continue;
         visto.add(k);
         fila.push(v);
       }
@@ -372,7 +382,7 @@ export class Sala {
   }
 
   caminhar(ent, destino, permitirFimBloqueado = false) {
-    const c = aEstrela({ x: Math.floor(ent.x), y: Math.floor(ent.y) }, destino, this.bloqueado, permitirFimBloqueado);
+    const c = aEstrela({ x: Math.floor(ent.x), y: Math.floor(ent.y) }, destino, this.bloqueado, permitirFimBloqueado, this.int);
     ent.caminho = c || [];
     return !!c;
   }
@@ -382,14 +392,14 @@ export class Sala {
     c.estado = 'saindo';
     c.humor = humor;
     c.timer = 0;
-    const dentro = noInterior(Math.floor(c.x), Math.floor(c.y));
+    const dentro = noInterior(Math.floor(c.x), Math.floor(c.y), this.int);
     const alvo = { x: c.saidaX, y: 11 };
     if (dentro) {
-      const ate = aEstrela({ x: Math.floor(c.x), y: Math.floor(c.y) }, MAPA.portaFora, this.bloqueado, true) || [];
-      const resto = aEstrela(MAPA.portaFora, alvo) || [];
+      const ate = aEstrela({ x: Math.floor(c.x), y: Math.floor(c.y) }, MAPA.portaFora, this.bloqueado, true, this.int) || [];
+      const resto = aEstrela(MAPA.portaFora, alvo, undefined, false, this.int) || [];
       c.caminho = [...ate, ...resto];
     } else {
-      c.caminho = aEstrela({ x: Math.floor(c.x), y: Math.floor(c.y) }, alvo) || [];
+      c.caminho = aEstrela({ x: Math.floor(c.x), y: Math.floor(c.y) }, alvo, undefined, false, this.int) || [];
     }
   }
 
@@ -418,7 +428,7 @@ export class Sala {
                 c.vaiEmbora = true;
                 this.sujo = true;
               } else {
-                c.caminho = aEstrela({ x: Math.floor(c.x), y: 11 }, { x: c.saidaX, y: 11 }) || [];
+                c.caminho = aEstrela({ x: Math.floor(c.x), y: 11 }, { x: c.saidaX, y: 11 }, undefined, false, this.int) || [];
                 c.estado = 'saindo';
               }
             }
@@ -489,14 +499,17 @@ export class Sala {
 
   // --------------------------------------------------------------- atendimento
   tileDeTrabalho(movel, ocupadosPor = new Set()) {
-    const ordem = vizinhos(movel.x, movel.y);
-    // a rotação define o lado preferido
-    const pref = ordem[(movel.rot ?? 0) % 4];
-    const lista = [pref, ...ordem.filter((t) => t !== pref)];
+    // o barbeiro fica ao lado da cadeira; se não der, atrás dela (na frente fica o espelho)
+    const r = (((movel.rot ?? 0) % 4) + 4) % 4;
+    const lado1 = FRENTE[(r + 1) % 4];
+    const lado2 = FRENTE[(r + 3) % 4];
+    const tras = FRENTE[(r + 2) % 4];
+    const frente = FRENTE[r];
+    const lista = [lado1, lado2, tras, frente].map(([dx, dy]) => ({ x: movel.x + dx, y: movel.y + dy }));
     for (const t of lista) {
-      if (!noInterior(t.x, t.y) || this.bloqueado(t.x, t.y)) continue;
+      if (!noInterior(t.x, t.y, this.int) || this.bloqueado(t.x, t.y)) continue;
       if (ocupadosPor.has(`${t.x},${t.y}`)) continue;
-      if (aEstrela(MAPA.porta, t, this.bloqueado) === null && !(t.x === MAPA.porta.x && t.y === MAPA.porta.y)) continue;
+      if (aEstrela(MAPA.porta, t, this.bloqueado, false, this.int) === null && !(t.x === MAPA.porta.x && t.y === MAPA.porta.y)) continue;
       return t;
     }
     return null;
@@ -553,7 +566,7 @@ export class Sala {
         const barbChegou = !barb || !barb.online && a.tipo !== 'npc' || barb.caminho.length === 0;
         if (clienteChegou) {
           c.estado = 'naCadeira';
-          c.dir = (cadeira.rot + 1) % 4;
+          c.dir = (((cadeira.rot ?? 0) % 4) + 4) % 4; // de frente para o espelho
         }
         if (clienteChegou && barbChegou) {
           a.iniciado = true;
@@ -721,8 +734,9 @@ export class Sala {
     const horasAberta = h.minutosAberta / 60;
     const energia = cf.energiaBase + cf.energiaPorAr * this.colocados('ar').length + Math.round(cf.energiaPorHoraAberta * horasAberta);
     const salarios = cf.salarioNpc * s.npcs.length;
-    this.movimentar(-cf.aluguel, 'aluguel', 'Aluguel do dia');
-    h.custos.aluguel += cf.aluguel;
+    const aluguel = cf.aluguel + this.nivelAtual().aluguelExtra;
+    this.movimentar(-aluguel, 'aluguel', s.loja.nivel > 1 ? `Aluguel do dia (salão nível ${s.loja.nivel})` : 'Aluguel do dia');
+    h.custos.aluguel += aluguel;
     this.movimentar(-energia, 'energia', `Energia (${horasAberta.toFixed(1).replace('.', ',')} h aberta)`);
     h.custos.energia += energia;
     if (salarios) {
@@ -846,8 +860,9 @@ export class Sala {
   // --------------------------------------------------------------- jogadores
   posicaoInicial() {
     const livres = [];
-    for (let y = MAPA.interior.y0; y <= MAPA.interior.y1; y++)
-      for (let x = MAPA.interior.x0; x <= MAPA.interior.x1; x++) if (!this.bloqueado(x, y)) livres.push({ x, y });
+    const int = this.int;
+    for (let y = int.y0; y <= int.y1; y++)
+      for (let x = int.x0; x <= int.x1; x++) if (!this.bloqueado(x, y)) livres.push({ x, y });
     const p = livres.length ? livres[Math.floor(this.rng() * livres.length)] : MAPA.porta;
     return { x: p.x + 0.5, y: p.y + 0.5 };
   }
@@ -1075,7 +1090,7 @@ const ACOES = {
     const x = Math.floor(Number(d.x));
     const y = Math.floor(Number(d.y));
     if (j.trabalhando) return { erro: 'Você está atendendo um cliente' };
-    if (!caminhavelBase(x, y) || this.bloqueado(x, y)) return { erro: 'Não dá para ir aí' };
+    if (!caminhavelBase(x, y, this.int) || this.bloqueado(x, y)) return { erro: 'Não dá para ir aí' };
     if (!this.caminhar(j, { x, y })) return { erro: 'Caminho bloqueado' };
   },
 
@@ -1173,7 +1188,14 @@ const ACOES = {
     const y = Math.floor(Number(d.y));
     const rot = ((Math.floor(Number(d.rot ?? m.rot)) % 4) + 4) % 4;
     if (this.emUso(m)) return { erro: 'Esse móvel está em uso agora' };
-    if (!noInterior(x, y)) return { erro: 'Coloque dentro da loja' };
+    if (!noInterior(x, y, this.int)) return { erro: 'Coloque dentro da loja' };
+    if (m.tipo === 'cadeira' && !m.colocado) {
+      const nv = this.nivelAtual();
+      if (this.colocados('cadeira').length >= nv.maxCadeiras) {
+        const prox = eco.ampliacao[nv.nivel];
+        return { erro: `Este salão comporta ${nv.maxCadeiras} cadeiras.${prox ? ' Amplie a barbearia (Loja → Ampliar) para colocar mais.' : ''}` };
+      }
+    }
     if (x === MAPA.porta.x && y === MAPA.porta.y) return { erro: 'Não bloqueie a porta' };
     const outro = this.movelEm(x, y);
     if (outro && outro.id !== m.id) return { erro: 'Esse lugar já está ocupado' };
@@ -1377,6 +1399,23 @@ const ACOES = {
     this.registrarLog(j, `contratou o barbeiro NPC ${nome} (${formatarDinheiro(eco.custosFixos.salarioNpc)}/dia)`);
   },
 
+  ampliarLoja(j) {
+    const s = this.s;
+    const prox = eco.ampliacao[s.loja.nivel]; // índice = nível atual → próximo nível
+    if (!prox) return { erro: 'A barbearia já está no tamanho máximo' };
+    if (s.atendimentos.length) return { erro: 'Espere terminar os atendimentos em andamento (a obra mexe nas paredes)' };
+    if (prox.preco > s.loja.caixa) return { erro: `Caixa insuficiente: a ampliação custa ${formatarDinheiro(prox.preco)}` };
+    this.movimentar(-prox.preco, 'ampliacao', `Ampliação: ${prox.nome}`, j);
+    s.hoje.custos.compras += prox.preco;
+    s.loja.nivel = prox.nivel;
+    this.reconstruirOcupacao();
+    this.registrarLog(j, `ampliou a barbearia para ${prox.nome} por ${formatarDinheiro(prox.preco)} (aluguel +${formatarDinheiro(prox.aluguelExtra)}/dia)`);
+    this.anunciar(`Barbearia ampliada: ${prox.nome}! Agora cabem ${prox.maxCadeiras} cadeiras.`, 'sucesso');
+    this.emitir('som', { som: 'moeda' });
+    this.sujo = true;
+    return { nivel: prox.nivel };
+  },
+
   demitirNpc(j, d) {
     const s = this.s;
     const i = s.npcs.findIndex((n) => n.id === Number(d.npcId));
@@ -1409,13 +1448,13 @@ Object.assign(Sala.prototype, {
       const t = fila.shift();
       for (const v of vizinhos(t.x, t.y)) {
         const k = `${v.x},${v.y}`;
-        if (visto.has(k) || !noInterior(v.x, v.y) || this.bloqueado(v.x, v.y) || !passagemLivre(t.x, t.y, v.x, v.y)) continue;
+        if (visto.has(k) || !noInterior(v.x, v.y, this.int) || this.bloqueado(v.x, v.y) || !passagemLivre(t.x, t.y, v.x, v.y, this.int)) continue;
         visto.add(k);
         fila.push(v);
       }
     }
     for (const m of this.s.moveis) {
-      if (!m.colocado) continue;
+      if (!m.colocado || m.tipo === 'espelho') continue; // espelho fica encostado; o barbeiro usa pelo lado da cadeira
       if (!vizinhos(m.x, m.y).some((v) => visto.has(`${v.x},${v.y}`))) return false;
     }
     return true;

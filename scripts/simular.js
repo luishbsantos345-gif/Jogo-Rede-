@@ -3,6 +3,7 @@
 //      node scripts/simular.js 10 (número de dias)
 import { Sala } from '../server/sala.js';
 import { formatarDinheiro as f } from '../shared/dinheiro.js';
+import eco from '../config/economia.js';
 
 const DIAS = Number(process.argv[2]) || 7;
 
@@ -18,6 +19,8 @@ function montar(sala, c, itens, posicoes) {
     const r = sala.acao(c.id, 'comprar', { item, qtd });
     if (!r.ok) console.log('  (não comprou', item, '-', r.erro + ')');
   }
+  // os robôs esperam na calçada enquanto os móveis são montados (ninguém fica no caminho)
+  for (const j of Object.values(sala.s.jogadores)) Object.assign(j, { x: 7.5, y: 10.5, caminho: [] });
   const usados = {};
   for (const m of sala.s.moveis) {
     if (m.colocado) continue;
@@ -26,10 +29,13 @@ function montar(sala, c, itens, posicoes) {
     if (!lista[i]) continue;
     // se alguém estiver parado no lugar, tenta os vizinhos
     for (const [dx, dy] of [[0, 0], [0, 1], [1, 0], [-1, 0], [0, -1], [1, 1]]) {
-      if (sala.acao(c.id, 'posicionar', { movelId: m.id, x: lista[i][0] + dx, y: lista[i][1] + dy, rot: 0 }).ok) break;
+      if (sala.acao(c.id, 'posicionar', { movelId: m.id, x: lista[i][0] + dx, y: lista[i][1] + dy, rot: ROT[m.tipo] ?? 0 }).ok) break;
     }
   }
 }
+
+// cadeira virada para o fundo (−y) e espelho no tile de trás, com o vidro virado para ela (+y)
+const ROT = { cadeira: 3, espelho: 1 };
 
 const POS = {
   cadeira: [[5, 4], [8, 4], [11, 4]],
@@ -69,7 +75,7 @@ function estrategia(nome, semente, cfg) {
       const r = sala.acao(g.id, 'abrirFechar', { abrir: true });
       if (!r.ok && dia === 1) console.log('  não abriu:', r.erro);
     }
-    if (cfg.manutencao) cfg.manutencao(sala, c, fin);
+    if (cfg.manutencao) cfg.manutencao(sala, c, g);
     while (sala.s.tempo.fase === 'dia') {
       sala.tick(0.25);
       reacao -= 0.25;
@@ -110,6 +116,35 @@ function reabastecer(sala, c) {
   }
 }
 
+// Crescimento: começa com 2 cadeiras, põe a 3ª quando sobra caixa e amplia o salão quando
+// o caixa paga a obra + 2 cadeiras com espelho e ainda guarda uma reserva.
+const RESERVA = 150000;
+const CUSTO_PAR = 95000; // cadeira + espelho (preço base)
+const VAGAS = [
+  { nivel: 1, cadeira: [11, 4], espelho: [11, 3] },
+  { nivel: 2, cadeira: [14, 4], espelho: [14, 3] },
+  { nivel: 2, cadeira: [14, 7], espelho: [14, 6] },
+  { nivel: 3, cadeira: [6, 1], espelho: [6, 0] },
+  { nivel: 3, cadeira: [10, 1], espelho: [10, 0] },
+];
+function crescer(sala, c, g) {
+  reabastecer(sala, c);
+  const nivel = sala.s.loja.nivel;
+  const prox = sala.s.loja.nivel < 3 ? eco.ampliacao[nivel] : null;
+  const vaga = VAGAS.find((v) => v.nivel <= nivel && !sala.movelEm(v.cadeira[0], v.cadeira[1]));
+  if (vaga && sala.s.loja.caixa > CUSTO_PAR + RESERVA) {
+    sala.acao(c.id, 'comprar', { item: 'cadeira', qtd: 1 });
+    sala.acao(c.id, 'comprar', { item: 'espelho', qtd: 1 });
+    for (const j of Object.values(sala.s.jogadores)) Object.assign(j, { x: 7.5, y: 10.5, caminho: [] });
+    const solto = (t) => sala.s.moveis.find((m) => m.tipo === t && !m.colocado);
+    sala.acao(c.id, 'posicionar', { movelId: solto('espelho')?.id, x: vaga.espelho[0], y: vaga.espelho[1], rot: 1 });
+    sala.acao(c.id, 'posicionar', { movelId: solto('cadeira')?.id, x: vaga.cadeira[0], y: vaga.cadeira[1], rot: 3 });
+  } else if (!vaga && prox && sala.s.loja.caixa > prox.preco + 2 * CUSTO_PAR + RESERVA) {
+    const r = sala.acao(g.id, 'ampliarLoja', {});
+    if (r.ok) console.log(`  dia ${sala.s.tempo.dia}: ampliou para ${prox.nome}`);
+  }
+}
+
 const BASICO = [
   ['cadeira', 1], ['espelho', 1], ['balcao', 1], ['tesoura', 1], ['maquina', 1], ['navalha', 1],
   ['borrifador', 1], ['capa', 1], ['toalhas', 1], ['laminas', 2],
@@ -137,4 +172,19 @@ estrategia('DESCUIDADA — empréstimo, luxo, 3 NPCs, preços +50%, sem repor', 
   emprestimo: { valor: 400000, prazo: 3 },
   compras: [...BASICO, ['ar', 1], ['tv', 1], ['lavatorio', 1], ['esterilizador', 1], ['luminaria', 1], ['sofa', 2], ['cadeira', 2], ['espelho', 2]],
   precos: [['servico', 'corte', 1.5], ['servico', 'barba', 1.5], ['servico', 'corteBarba', 1.5], ['servico', 'sobrancelha', 1.5], ['servico', 'pigmentacao', 1.5]],
+});
+
+// Mesma equipe grande (5 barbeiros), com e sem ampliação, para ver se a obra se paga.
+const comprasCrescimento = [...BASICO, ['cadeira', 1], ['espelho', 1], ['sofa', 1], ['prateleira', 1], ['pomada', 4], ['oleo', 4]];
+estrategia('SEM AMPLIAR — 5 barbeiros, até 3 cadeiras', 2, {
+  barbeiros: 5,
+  reacao: 3,
+  compras: comprasCrescimento,
+  manutencao: (s, c) => crescer(s, c, { id: -1 }), // gerente inexistente: a ampliação é recusada
+});
+estrategia('CRESCIMENTO — 5 barbeiros, amplia quando o caixa permite', 2, {
+  barbeiros: 5,
+  reacao: 3,
+  compras: comprasCrescimento,
+  manutencao: (s, c, g) => crescer(s, c, g),
 });

@@ -1,5 +1,5 @@
 // Renderização do mapa isométrico num canvas de baixa resolução, ampliado sem borrar.
-import { MAPA, isoParaTela, telaParaIso, tipoTile, noInterior } from '/shared/mapa.js';
+import { MAPA, isoParaTela, telaParaIso, tipoTile, interiorDoNivel, espelhoDaCadeira, tileAFrente } from '/shared/mapa.js';
 import { spritePersonagem, spriteMovel, spriteCarro, spritePoste, MOVEL_ANCORA, poligono, linha, caixa, projetor, escurecer, clarear, contornar, CONTORNO } from './sprites.js';
 import { desenharTexto, larguraTexto, textoCanvas } from './fonte.js';
 
@@ -80,7 +80,10 @@ export class Render {
   }
 
   // ---------------------------------------------------------------- fundo estático
-  gerarFundo() {
+  gerarFundo(nivel = 1) {
+    const int = interiorDoNivel(nivel);
+    this.nivelFundo = nivel;
+    this.int = int;
     const c = document.createElement('canvas');
     c.width = FUNDO_W;
     c.height = FUNDO_H;
@@ -89,7 +92,7 @@ export class Render {
     // chão
     for (let y = 0; y < MAPA.H; y++)
       for (let x = 0; x < MAPA.W; x++) {
-        const t = tipoTile(x, y);
+        const t = tipoTile(x, y, int);
         let cor;
         if (t === 'interior') cor = (x + y) % 2 ? '#e9dcc1' : '#d8c6a5';
         else if (t === 'calcada') cor = (x + y) % 2 ? '#bdbdc4' : '#b0b0b8';
@@ -126,7 +129,10 @@ export class Render {
       [5, 10, 44, '#c9a46a'],
       [10, 16, 58, '#7b8fa6'],
     ];
-    for (const [x0, x1, h, cor] of fundos) {
+    for (let [x0, x1, h, cor] of fundos) {
+      // no salão dos fundos (nível 3) a loja ocupa y 0..1: só sobra o prédio à esquerda dela
+      if (int.y0 < 2) x1 = Math.min(x1, int.x0 - 0.15);
+      if (x1 - x0 < 0.5) continue;
       caixa(ctx, P, x0, 0, x1, 1.9, 0, h, cor, { topo: escurecer(cor, 0.6) });
       for (let x = x0 + 0.3; x < x1 - 0.3; x += 0.9)
         for (let z = 14; z < h - 6; z += 13) {
@@ -144,19 +150,27 @@ export class Render {
     caixa(ctx, P, 0, 9.6, 2.9, 10.25, 15, 18, '#e74c3c', { arestas: false });
     // paredes de trás da barbearia (altas)
     const parede = '#87b9c9';
-    caixa(ctx, P, 3, 1.85, 13, 2, 0, 28, parede, { esq: '#9fd0de', topo: '#5d8c9b' });
-    caixa(ctx, P, 2.85, 2, 3, 10, 0, 28, parede, { dir: '#7fb0c0', topo: '#5d8c9b' });
+    const xa = int.x0;
+    const xb = int.x1 + 1;
+    const ya = int.y0;
+    caixa(ctx, P, xa, ya - 0.15, xb, ya, 0, 28, parede, { esq: '#9fd0de', topo: '#5d8c9b' });
+    caixa(ctx, P, xa - 0.15, ya, xa, 10, 0, 28, parede, { dir: '#7fb0c0', topo: '#5d8c9b' });
     // rodapé
-    poligono(ctx, [P(3, 2, 0), P(13, 2, 0), P(13, 2, 5), P(3, 2, 5)], '#5f8f9e');
-    poligono(ctx, [P(3, 2, 0), P(3, 10, 0), P(3, 10, 5), P(3, 2, 5)], '#557f8d');
+    poligono(ctx, [P(xa, ya, 0), P(xb, ya, 0), P(xb, ya, 5), P(xa, ya, 5)], '#5f8f9e');
+    poligono(ctx, [P(xa, ya, 0), P(xa, 10, 0), P(xa, 10, 5), P(xa, ya, 5)], '#557f8d');
     // listras de barbearia (poste giratório pintado) e quadros
     for (const v of [4, 8]) {
       const z0 = 8;
       for (let i = 0; i < 5; i++) poligono(ctx, [P(3, v, z0 + i * 3), P(3, v + 0.3, z0 + i * 3), P(3, v + 0.3, z0 + i * 3 + 2), P(3, v, z0 + i * 3 + 2)], i % 2 ? '#d64545' : '#f2f2ee');
     }
-    for (const u of [5, 9.5]) {
-      poligono(ctx, [P(u, 2, 10), P(u + 1.2, 2, 10), P(u + 1.2, 2, 21), P(u, 2, 21)], '#6e472e');
-      poligono(ctx, [P(u + 0.1, 2, 11), P(u + 1.1, 2, 11), P(u + 1.1, 2, 20), P(u + 0.1, 2, 20)], u === 5 ? '#f2c230' : '#3fa34d');
+    const quadros = xb > 13 ? [5, 9.5, 13] : [5, 9.5];
+    quadros.forEach((u, k) => {
+      poligono(ctx, [P(u, ya, 10), P(u + 1.2, ya, 10), P(u + 1.2, ya, 21), P(u, ya, 21)], '#6e472e');
+      poligono(ctx, [P(u + 0.1, ya, 11), P(u + 1.1, ya, 11), P(u + 1.1, ya, 20), P(u + 0.1, ya, 20)], ['#f2c230', '#3fa34d', '#3b7dd8'][k]);
+    });
+    if (int.x1 >= 13) {
+      this.fundo = c;
+      return; // o jardim virou parte da loja (nível 2+)
     }
     // jardim: cerca viva e árvore
     caixa(ctx, P, 13.1, 2, 13.4, 10, 0, 5, '#2d7d3a');
@@ -189,7 +203,8 @@ export class Render {
    */
   desenhar(cena) {
     const b = this.bctx;
-    if (!this.fundo) this.gerarFundo();
+    const nivel = cena.estado?.loja.nivel || 1;
+    if (!this.fundo || this.nivelFundo !== nivel) this.gerarFundo(nivel);
     b.imageSmoothingEnabled = false;
     b.fillStyle = corCeu(cena.minuto, cena.fase);
     b.fillRect(0, 0, this.buffer.width, this.buffer.height);
@@ -235,11 +250,12 @@ export class Render {
     }
 
     // paredes frontais baixas com vitrine, porta e placas
-    const i = MAPA.interior;
+    const i = this.int;
+    const xb = i.x1 + 1;
     for (let x = i.x0; x <= i.x1; x++) lista.push({ k: x + 10.5, f: () => this.paredeFrente(b, P, x, est) });
-    for (let y = i.y0; y <= i.y1; y++) lista.push({ k: 13 + y + 0.5, f: () => this.paredeLado(b, P, y) });
-    lista.push({ k: 13 + 10 + 0.2, f: () => caixa(b, P, 12.88, 9.88, 13.02, 10.02, 0, 28, '#5d8c9b') });
-    lista.push({ k: 3 + 10 + 0.2, f: () => caixa(b, P, 2.95, 9.88, 3.1, 10.02, 0, 28, '#5d8c9b') });
+    for (let y = i.y0; y <= i.y1; y++) lista.push({ k: xb + y + 0.5, f: () => this.paredeLado(b, P, y, xb) });
+    lista.push({ k: xb + 10 + 0.2, f: () => caixa(b, P, xb - 0.12, 9.88, xb + 0.02, 10.02, 0, 28, '#5d8c9b') });
+    lista.push({ k: i.x0 + 10 + 0.2, f: () => caixa(b, P, i.x0 - 0.05, 9.88, i.x0 + 0.1, 10.02, 0, 28, '#5d8c9b') });
     lista.push({ k: 7 + 10.6, f: () => this.letreiro(b, P, est) });
     lista.push({ k: MAPA.porta.x + 2 + 10.6, f: () => this.placaAberto(b, P, est) });
 
@@ -298,7 +314,7 @@ export class Render {
   }
 
   desenharGrade(b, P, cena) {
-    const i = MAPA.interior;
+    const i = this.int;
     b.globalAlpha = 0.5;
     for (let x = i.x0; x <= i.x1 + 1; x++) {
       const a = P(x, i.y0);
@@ -313,6 +329,17 @@ export class Render {
     b.globalAlpha = 1;
     const pt = MAPA.porta;
     poligono(b, [P(pt.x, pt.y), P(pt.x + 1, pt.y), P(pt.x + 1, pt.y + 1), P(pt.x, pt.y + 1)], 'rgba(255,90,90,0.35)');
+    // onde vai o espelho de cada cadeira sem par (inclusive a que está sendo carregada)
+    const moveis = cena.estado?.moveis || [];
+    const alvos = moveis.filter((m) => m.colocado && m.tipo === 'cadeira' && cena.construcao.movendoId !== m.id && !espelhoDaCadeira(m, moveis));
+    const fan = cena.construcao.fantasma;
+    if (fan && fan.x >= 0 && fan.tipo === 'cadeira') alvos.push({ x: fan.x, y: fan.y, rot: fan.rot });
+    for (const cad of alvos) {
+      const f = tileAFrente(cad);
+      if (f.x < i.x0 || f.x > i.x1 || f.y < i.y0 || f.y > i.y1) continue;
+      poligono(b, [P(f.x + 0.2, f.y + 0.2), P(f.x + 0.8, f.y + 0.2), P(f.x + 0.8, f.y + 0.8), P(f.x + 0.2, f.y + 0.8)], 'rgba(120,210,255,0.45)');
+      this.contornoSelecao(b, P, f.x, f.y, '#7fd0ff');
+    }
   }
 
   contornoSelecao(b, P, x, y, cor) {
@@ -356,8 +383,8 @@ export class Render {
     b.drawImage(c, p[0] + 2, p[1] + 1);
   }
 
-  paredeLado(b, P, y) {
-    caixa(b, P, 12.9, y, 13, y + 1, 0, 6, '#b4685a', { dir: '#c47a6b', topo: '#d08a7c' });
+  paredeLado(b, P, y, xb) {
+    caixa(b, P, xb - 0.1, y, xb, y + 1, 0, 6, '#b4685a', { dir: '#c47a6b', topo: '#d08a7c' });
   }
 
   letreiro(b, P, est) {
@@ -463,7 +490,8 @@ export class Render {
     }
     const interiorLigado = est?.loja.aberta || cena.fase === 'noite';
     if (interiorLigado) {
-      const c = P(8, 6);
+      const int = this.int || MAPA.interior;
+      const c = P((int.x0 + int.x1 + 1) / 2, (int.y0 + int.y1 + 1) / 2);
       brilho(c[0], c[1], 120, '255,226,170', est?.loja.aberta ? 1.0 : 0.5);
       const f = P(7.5, 10, 30);
       brilho(f[0], f[1], 26, '255,200,120', 0.9);
@@ -476,6 +504,7 @@ export class Render {
     }
     // janelas acesas dos prédios
     for (let k = 0; k < 6; k++) {
+      if ((this.int?.y0 ?? 2) < 2 && 1 + k * 2.5 > (this.int?.x0 ?? 3)) continue; // prédios que viraram loja
       const p = P(1 + k * 2.5, 1.9, 26);
       brilho(p[0], p[1], 5, '255,220,150', 0.8);
     }
@@ -526,7 +555,8 @@ export class Render {
   }
 
   centralizarLoja() {
-    const p = isoParaTela(8, 6);
+    const int = this.int || MAPA.interior;
+    const p = isoParaTela((int.x0 + int.x1 + 1) / 2, (int.y0 + int.y1 + 1) / 2);
     this.cam.x = p.sx + ORIGEM.x;
     this.cam.y = p.sy + ORIGEM.y - 10;
   }

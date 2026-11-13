@@ -304,7 +304,8 @@ export function atualizarConstrucao() {
     : '<div class="dica" style="padding:8px">Nada no depósito. Compre móveis em Compras, ou clique num móvel do mapa para movê-lo.</div>';
   const ac = $('acoesMovel');
   if (c.carregando) {
-    ac.innerHTML = `<span>Escolha um lugar na loja para <b>${esc(J.eco.equipamentos[c.carregando.tipo].nome)}</b></span><button class="bt pequeno" data-a="girar">Girar (R)</button><button class="bt pequeno" data-a="cancelarCarregar">Cancelar</button>`;
+    const dicaPar = { cadeira: ' O quadrado azul mostra onde vai o espelho. Gire (R) para mudar o lado.', espelho: ' Coloque no quadrado azul, na frente da cadeira, com o vidro virado para ela.' }[c.carregando.tipo] || '';
+    ac.innerHTML = `<span>Escolha um lugar na loja para <b>${esc(J.eco.equipamentos[c.carregando.tipo].nome)}</b>.${dicaPar}</span><button class="bt pequeno" data-a="girar">Girar (R)</button><button class="bt pequeno" data-a="cancelarCarregar">Cancelar</button>`;
     return;
   }
   const sel = est.moveis.find((x) => x.id === c.selecionadoMovel);
@@ -410,7 +411,8 @@ function painelLoja(e) {
     <div class="linha" style="margin-top:8px">A loja está <b class="${e.loja.aberta ? 'ok' : 'ruim'}">${e.loja.aberta ? 'ABERTA' : 'FECHADA'}</b>
     ${e.loja.aberta ? bt('abrirFechar', 'Fechar loja', 'data-a="fechar"', 'vermelho') : bt('abrirFechar', 'Abrir loja', 'data-a="abrir"', 'verde')}</div>
     <ul class="checklist">${e.requisitos.map((r) => `<li class="${r.ok ? 'ok' : 'ruim'}">${r.ok ? '✔' : '✘'} ${esc(r.item)}</li>`).join('')}</ul>
-    <p class="dica">Loja fechada não recebe clientes, mas paga aluguel e energia. Cada cadeira precisa de um espelho para funcionar.</p>`;
+    <p class="dica">Loja fechada não recebe clientes, mas paga aluguel e energia. Cada cadeira só funciona com um espelho <b>na frente dela, virado para ela</b> (no modo Construir, o quadrado azul mostra onde vai o espelho).</p>`;
+  html += painelAmpliacao(e);
   html += `<h3>Preços dos serviços</h3><table><tr><th>Serviço</th><th class="num">Tempo</th><th class="num">Referência</th><th>Seu preço (ʀ$)</th><th>Efeito na procura</th><th></th></tr>`;
   for (const [id, s] of Object.entries(eco.servicos)) {
     const ref = e.referencias[id];
@@ -443,6 +445,36 @@ function painelLoja(e) {
       html += `<tr><td>${r.dia} (${r.diaSemana.slice(0, 3)})</td><td class="num">${m(r.faturamento)}</td><td class="num">${m(r.custos)}</td><td class="num ${r.lucro >= 0 ? 'ok' : 'ruim'}">${m(r.lucro)}</td><td class="num">${r.atendidos}</td><td class="num">${m(r.caixa)}</td></tr>`;
     html += `</table>`;
   }
+  return html;
+}
+
+function painelAmpliacao(e) {
+  const niveis = J.eco.ampliacao;
+  const nivel = e.loja.nivel || 1;
+  const atual = niveis[nivel - 1];
+  const prox = niveis[nivel];
+  const cadeiras = e.moveis.filter((x) => x.colocado && x.tipo === 'cadeira').length;
+  const aluguelHoje = J.eco.custosFixos.aluguel + atual.aluguelExtra;
+  let html = `<h3>Tamanho da barbearia</h3>
+    <div class="cards">
+      <div class="card"><div class="rot">Salão atual</div><div class="val">${esc(atual.nome)}</div></div>
+      <div class="card"><div class="rot">Cadeiras no mapa</div><div class="val">${cadeiras} / ${atual.maxCadeiras}</div></div>
+      <div class="card"><div class="rot">Aluguel por dia</div><div class="val">${m(aluguelHoje)}</div></div>
+    </div>`;
+  if (!prox) return html + `<p class="dica">A barbearia já está no tamanho máximo.</p>`;
+  const falta = Math.max(0, prox.preco - e.loja.caixa);
+  html += `<table>
+    <tr><th></th><th>Agora</th><th>Depois de ampliar</th></tr>
+    <tr><td>Área</td><td>${esc(atual.nome)}</td><td>${esc(prox.nome)}</td></tr>
+    <tr><td>Cadeiras que cabem</td><td class="num">${atual.maxCadeiras}</td><td class="num">${prox.maxCadeiras}</td></tr>
+    <tr><td>Clientes esperando em pé</td><td class="num">${J.eco.demanda.lugaresEmPe + atual.lugaresEmPeExtra}</td><td class="num">${J.eco.demanda.lugaresEmPe + prox.lugaresEmPeExtra}</td></tr>
+    <tr><td>Movimento na calçada</td><td class="num">+${Math.round(atual.bonusDemanda * 100)}%</td><td class="num">+${Math.round(prox.bonusDemanda * 100)}%</td></tr>
+    <tr><td>Aluguel por dia</td><td class="num">${m(aluguelHoje)}</td><td class="num">${m(J.eco.custosFixos.aluguel + prox.aluguelExtra)}</td></tr>
+  </table>
+  <div class="linha" style="margin-top:8px">${bt('ampliarLoja', `Ampliar agora por ${formatarDinheiro(prox.preco)}`, 'data-a="ampliar"', 'verde')}
+    ${falta ? `<span class="ruim">Faltam ${m(falta)} no caixa</span>` : ''}</div>
+  <p class="dica">A obra é paga à vista e o aluguel sobe para sempre. Vale a pena quando a loja perde clientes por fila cheia
+    e a equipe tem barbeiros para as cadeiras novas. Faça a conta: em quantos dias o lucro extra paga a obra? As cadeiras e espelhos novos são comprados à parte.</p>`;
   return html;
 }
 
@@ -762,6 +794,13 @@ async function cliqueJanela(ev) {
     case 'renomear':
       await executar('renomearLoja', { nome: $('pNome').value }, 'Nome alterado');
       break;
+    case 'ampliar': {
+      const prox = J.eco.ampliacao[(J.estado?.loja.nivel || 1)];
+      if (!prox) break;
+      if (!confirm(`Ampliar para "${prox.nome}" por ${formatarDinheiro(prox.preco)}?\nO aluguel sobe ${formatarDinheiro(prox.aluguelExtra)} por dia.`)) break;
+      await executar('ampliarLoja', {});
+      break;
+    }
     case 'abrir':
       await executar('abrirFechar', { abrir: true });
       break;

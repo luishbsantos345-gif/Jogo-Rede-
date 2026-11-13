@@ -126,6 +126,14 @@ const economia = {
     salarioNpc: 9000,
   },
 
+  // Ampliação da barbearia (o Gerente compra, um nível por vez). Índice 0 = nível 1 (inicial).
+  // A área de cada nível fica em shared/mapa.js (NIVEIS_INTERIOR).
+  ampliacao: [
+    { nivel: 1, nome: 'Salão original (10×8)', preco: 0, aluguelExtra: 0, maxCadeiras: 3, lugaresEmPeExtra: 0, bonusDemanda: 0 },
+    { nivel: 2, nome: 'Anexo lateral (13×8)', preco: 200000, aluguelExtra: 2500, maxCadeiras: 5, lugaresEmPeExtra: 2, bonusDemanda: 0.1 },
+    { nivel: 3, nome: 'Salão dos fundos (13×10)', preco: 350000, aluguelExtra: 4000, maxCadeiras: 7, lugaresEmPeExtra: 4, bonusDemanda: 0.2 },
+  ],
+
   npc: {
     fatorVelocidade: 0.7, // NPC leva duração / 0.7
     maxPorCadeira: 1,
