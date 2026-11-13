@@ -90,13 +90,25 @@ Se ninguém estiver conectado à sala, o tempo do jogo fica parado.
 ## 4. Como se joga (resumo para os alunos)
 
 - **Gerente:** abre/fecha a loja, define preços dos serviços e produtos, renomeia a loja, aprova empréstimos,
-  contrata barbeiro NPC (só quando não há Barbeiro jogador online).
+  contrata barbeiro NPC (só quando não há Barbeiro jogador online) e decide quando **ampliar a barbearia**.
 - **Compras/Estoque:** compra móveis, ferramentas e produtos; usa **Construir** para arrastar móveis para a loja
   (tecla **R** gira); expõe produtos na prateleira; vende usados.
 - **Financeiro:** pede empréstimos (o Gerente aprova; sem Gerente online, aprova sozinho), paga ou quita, vê o extrato.
 - **Barbeiro:** clica num cliente da fila (no mapa ou no painel "Fila de espera") e depois numa cadeira livre.
   Pode "Sugerir produto" durante o atendimento.
-- Para abrir é preciso: 1 cadeira, 1 espelho, 1 tesoura ou máquina e 1 balcão. Cada cadeira precisa de um espelho.
+- Para abrir é preciso: 1 cadeira, 1 espelho, 1 tesoura ou máquina e 1 balcão.
+- **O espelho vai na frente da cadeira, virado para ela.** A cadeira "olha" para um lado (gire com **R**); no modo
+  Construir, um quadrado azul mostra onde o espelho tem que ficar. Espelho ao lado, atrás ou virado para outro lado
+  não vale: a cadeira aparece com "SEM ESPELHO" e não atende. O barbeiro trabalha ao lado da cadeira.
+- **Ampliar a barbearia (Loja → Tamanho da barbearia):** o salão começa com 10×8 e cabem 3 cadeiras.
+  | Nível | Área | Obra (à vista) | Aluguel por dia | Cadeiras | Lugares em pé | Movimento na calçada |
+  |---|---|---|---|---|---|---|
+  | 1 | Salão original (10×8) | — | ʀ$ 80,00 | 3 | 3 | — |
+  | 2 | Anexo lateral, onde era o jardim (13×8) | ʀ$ 2.000,00 | ʀ$ 105,00 | 5 | 5 | +10% |
+  | 3 | Salão dos fundos (13×10) | ʀ$ 3.500,00 | ʀ$ 120,00 | 7 | 7 | +20% |
+
+  Cadeiras e espelhos novos são comprados à parte. A obra só acontece sem atendimento em andamento.
+  Pergunta para a turma: em quantos dias o lucro extra paga a obra e o aluguel mais caro?
 - O dia vai das 07:00 às 21:00. À noite aparece o resumo (faturamento, custos, lucro, clientes perdidos e por quê).
 - Caixa negativo por 3 dias seguidos = falência.
 
@@ -104,7 +116,7 @@ Se ninguém estiver conectado à sala, o tempo do jogo fica parado.
 
 ```bash
 npm test          # testes automáticos: juros, quitação antecipada, atraso/multa, variação de preços, moeda, permissões
-npm run simular   # simula 7 dias com robôs (estratégia razoável x descuidada) e imprime o resultado
+npm run simular   # simula 7 dias com robôs (razoável, descuidada, com e sem ampliação) e imprime o resultado
 ```
 
 Teste de permissão pelo console do navegador (F12), logado como Barbeiro:
@@ -119,7 +131,7 @@ socket.emit('acao', { tipo: 'solicitarEmprestimo', valor: 100000, prazo: 7 }, co
 ## 6. Ajustar o balanceamento
 
 Todos os números do jogo (preços, durabilidades, durações, demanda de clientes, custos fixos,
-juros, multa, mora, eventos, elasticidade, reputação) ficam em **`config/economia.js`**,
+juros, multa, mora, eventos, elasticidade, reputação, ampliação) ficam em **`config/economia.js`**,
 comentados. Mude, reinicie o servidor e rode `npm run simular` para ver o efeito.
 
 ## 7. Estrutura

@@ -1,11 +1,13 @@
 // Laço do jogo no navegador: recebe estado, interpola, desenha e envia intenções.
 import { J, acao, meuCargo } from './estado.js';
 import { Render } from './render.js';
-import { noInterior, MAPA, caminhavelBase } from '/shared/mapa.js';
+import { noInterior, MAPA, caminhavelBase, interiorDoNivel } from '/shared/mapa.js';
 import { pode, dicaPermissao } from '/shared/permissoes.js';
 import { iconeMovel } from './sprites.js';
 import * as UI from './ui.js';
 import { tocar } from './som.js';
+
+const interiorAtual = () => interiorDoNivel(J.estado?.loja.nivel || 1);
 
 const $ = (id) => document.getElementById(id);
 let render;
@@ -222,7 +224,7 @@ async function clique(cx, cy) {
   }
   // ---- andar
   const t = tileDoClique(cx, cy);
-  if (!caminhavelBase(t.x, t.y)) return;
+  if (!caminhavelBase(t.x, t.y, interiorAtual())) return;
   const r = await acao('mover', t);
   if (!r.ok && r.erro !== 'Não dá para ir aí') UI.toast(r.erro, 'aviso', 1500);
 }
@@ -270,7 +272,7 @@ export function atualizarFantasma(cx, cy) {
   const est = J.estado;
   const ocupado = est.moveis.some((m) => m.colocado && m.id !== c.movelId && m.x === t.x && m.y === t.y);
   const porta = t.x === MAPA.porta.x && t.y === MAPA.porta.y;
-  J.construcao.fantasma = { x: t.x, y: t.y, tipo: c.tipo, rot: c.rot, valido: noInterior(t.x, t.y) && !ocupado && !porta };
+  J.construcao.fantasma = { x: t.x, y: t.y, tipo: c.tipo, rot: c.rot, valido: noInterior(t.x, t.y, interiorAtual()) && !ocupado && !porta };
 }
 
 export async function girar() {

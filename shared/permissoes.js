@@ -9,6 +9,7 @@ export const PERMISSOES = {
   recusarEmprestimo: ['gerente'],
   contratarNpc: ['gerente'],
   demitirNpc: ['gerente'],
+  ampliarLoja: ['gerente'],
 
   solicitarEmprestimo: ['financeiro'],
   pagarEmprestimo: ['financeiro'],

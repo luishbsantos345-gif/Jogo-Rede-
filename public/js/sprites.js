@@ -126,11 +126,34 @@ export function projetor(ox, oy) {
   return (u, v, z = 0) => [ox + (u - v) * 16, oy + (u + v) * 8 - z];
 }
 
-/** Caixa isométrica com 3 faces visíveis (topo, face +x, face +y). */
+/**
+ * Gira um retângulo do tile (u,v em 0..1) r quartos de volta em torno do centro.
+ * Um quarto de volta leva a direção +x para +y (mesma convenção de rot dos móveis).
+ */
+function girarRet(u0, v0, u1, v1, r) {
+  let pts = [[u0, v0], [u1, v1]];
+  for (let k = 0; k < r; k++) pts = pts.map(([u, v]) => [1 - v, u]);
+  return [Math.min(pts[0][0], pts[1][0]), Math.min(pts[0][1], pts[1][1]), Math.max(pts[0][0], pts[1][0]), Math.max(pts[0][1], pts[1][1])];
+}
+
+/**
+ * Caixa isométrica com 3 faces visíveis (topo, face +x, face +y).
+ * Se o projetor tiver P.rot (móvel girado), a caixa é girada e cada face visível
+ * recebe a cor do "material" do lado original (ex.: o vidro do espelho só aparece
+ * quando está virado para a câmera).
+ */
 export function caixa(ctx, P, u0, v0, u1, v1, z0, z1, cor, opts = {}) {
   const topo = opts.topo || clarear(cor, 0.18);
-  const dir = opts.dir || cor; // face +x (direita)
-  const esq = opts.esq || escurecer(cor, 0.78); // face +y (esquerda)
+  let dir = opts.dir || cor; // face +x (direita)
+  let esq = opts.esq || escurecer(cor, 0.78); // face +y (esquerda)
+  const r = P.rot || 0;
+  if (r) {
+    [u0, v0, u1, v1] = girarRet(u0, v0, u1, v1, r);
+    // material de cada lado original: 0 = +x, 1 = +y, 2 = −x, 3 = −y
+    const material = [opts.dir, opts.esq, opts.dirTras, opts.esqTras];
+    dir = material[(4 - r) % 4] || cor;
+    esq = material[(5 - r) % 4] || escurecer(cor, 0.78);
+  }
   poligono(ctx, [P(u1, v0, z0), P(u1, v1, z0), P(u1, v1, z1), P(u1, v0, z1)], dir);
   poligono(ctx, [P(u0, v1, z0), P(u1, v1, z0), P(u1, v1, z1), P(u0, v1, z1)], esq);
   poligono(ctx, [P(u0, v0, z1), P(u1, v0, z1), P(u1, v1, z1), P(u0, v1, z1)], topo);
@@ -381,24 +404,22 @@ const DESENHOS = {
   },
 };
 
-/** Sprite de móvel. rot ímpar = espelhado. variante: nível de produtos (prateleira). */
+/**
+ * Sprite de móvel. rot 0..3 = virado para +x, +y, −x, −y (o desenho é girado de verdade,
+ * então a cadeira de costas mostra o encosto e o espelho de costas mostra a moldura).
+ * variante: nível de produtos (prateleira).
+ */
 export function spriteMovel(tipo, rot = 0, variante = 0) {
-  const chave = `${tipo}|${rot % 2}|${variante}`;
+  const r = (((rot ?? 0) % 4) + 4) % 4;
+  const chave = `${tipo}|${r}|${variante}`;
   let c = cacheMoveis.get(chave);
   if (c) return c;
   c = novoCanvas(MOVEL_ANCORA.w, MOVEL_ANCORA.h);
   const ctx = c.getContext('2d');
   const P = projetor(MOVEL_ANCORA.x, MOVEL_ANCORA.y);
+  P.rot = r;
   (DESENHOS[tipo] || DESENHOS.planta)(ctx, P, variante);
   contornar(c);
-  if (rot % 2 === 1) {
-    const m = novoCanvas(c.width, c.height);
-    const mc = m.getContext('2d');
-    mc.translate(c.width, 0);
-    mc.scale(-1, 1);
-    mc.drawImage(c, 0, 0);
-    c = m;
-  }
   cacheMoveis.set(chave, c);
   return c;
 }
